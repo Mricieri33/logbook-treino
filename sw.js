@@ -1,4 +1,4 @@
-const CACHE = 'logbook-treino-v1';
+const CACHE = 'logbook-treino-v2';
 const ASSETS = [
   './',
   './index.html',
@@ -23,6 +23,24 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
+  const isPage = e.request.mode === 'navigate' || e.request.destination === 'document';
+
+  if(isPage){
+    // Rede primeiro: sempre busca a versão mais nova quando online.
+    // Cache só entra como reserva se o celular estiver offline.
+    e.respondWith(
+      fetch(e.request)
+        .then(resp => {
+          const copy = resp.clone();
+          caches.open(CACHE).then(c => c.put(e.request, copy));
+          return resp;
+        })
+        .catch(() => caches.match(e.request).then(cached => cached || caches.match('./index.html')))
+    );
+    return;
+  }
+
+  // Demais arquivos (ícones, manifest, libs): cache primeiro, rede como reforço.
   e.respondWith(
     caches.match(e.request).then(cached =>
       cached ||
@@ -30,7 +48,7 @@ self.addEventListener('fetch', e => {
         const copy = resp.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));
         return resp;
-      }).catch(() => caches.match('./index.html'))
+      })
     )
   );
 });
