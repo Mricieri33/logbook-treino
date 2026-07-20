@@ -23,3 +23,4 @@ App de registro de treino (semanas/meses) com análise de evolução de reps e c
 
 - Salvos em `localStorage` do navegador (por dispositivo)
 - Limpar dados do Chrome apaga o histórico do app
+# atualizado
