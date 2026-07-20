@@ -126,8 +126,13 @@
   .day-focus{
     color:var(--muted);
     font-size:12px;
-    margin-bottom:14px;
     letter-spacing:0.3px;
+  }
+  .day-focus-row{
+    display:flex;
+    align-items:center;
+    flex-wrap:wrap;
+    margin-bottom:14px;
   }
   .off-day{
     background:var(--panel);
@@ -175,7 +180,7 @@
     font-weight:400;
     margin-top:2px;
   }
-  td.exname .rename-btn{
+  .rename-btn{
     background:none;
     border:none;
     color:var(--steel);
@@ -453,7 +458,10 @@
     </div>
 
     <div class="day-tabs" id="dayTabs"></div>
-    <div class="day-focus" id="dayFocus"></div>
+    <div class="day-focus-row">
+      <span class="day-focus" id="dayFocus"></span>
+      <button class="rename-btn" onclick="editDayFocus()">editar</button>
+    </div>
     <div id="dayContent"></div>
     <div class="save-indicator" id="saveIndicator"></div>
   </div>
@@ -549,36 +557,16 @@ let viewDate = new Date(); // controls which month is shown in Treino tab
 let activeDayId = null;
 let saveTimer = null;
 
-/* ============ STORAGE (híbrido: navegador ou Claude) ============ */
-async function storageGet(key){
-  if(typeof window.storage !== 'undefined' && window.storage){
-    try{
-      const r = await window.storage.get(key);
-      if(r) return r.value;
-    }catch(e){ /* tenta localStorage */ }
-  }
-  try{ return localStorage.getItem(key); }catch(e){ return null; }
-}
-
-async function storageSet(key, value){
-  if(typeof window.storage !== 'undefined' && window.storage){
-    try{
-      await window.storage.set(key, value);
-      return true;
-    }catch(e){ /* tenta localStorage */ }
-  }
-  try{ localStorage.setItem(key, value); return true; }catch(e){ return false; }
-}
-
+/* ============ STORAGE (navegador / cache do celular) ============ */
 async function loadData(){
   try{
-    const p = await storageGet('treino_plan');
+    const p = localStorage.getItem('treino_plan');
     plan = p ? JSON.parse(p) : JSON.parse(JSON.stringify(DEFAULT_PLAN));
   }catch(e){
     plan = JSON.parse(JSON.stringify(DEFAULT_PLAN));
   }
   try{
-    const e = await storageGet('treino_entries');
+    const e = localStorage.getItem('treino_entries');
     entries = e ? JSON.parse(e) : {};
   }catch(e){
     entries = {};
@@ -589,13 +577,13 @@ function scheduleSave(){
   const ind = document.getElementById('saveIndicator');
   if(ind) ind.textContent = 'salvando...';
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(async ()=>{
-    const ok1 = await storageSet('treino_plan', JSON.stringify(plan));
-    const ok2 = await storageSet('treino_entries', JSON.stringify(entries));
-    if(ok1 && ok2){
+  saveTimer = setTimeout(()=>{
+    try{
+      localStorage.setItem('treino_plan', JSON.stringify(plan));
+      localStorage.setItem('treino_entries', JSON.stringify(entries));
       if(ind) ind.textContent = 'salvo';
       setTimeout(()=>{ if(ind) ind.textContent=''; }, 1500);
-    } else {
+    }catch(err){
       if(ind) ind.textContent = 'erro ao salvar';
     }
   }, 500);
@@ -825,6 +813,30 @@ function updateEntry(mk, slotId, weekKey, field, value){
   entries[mk][slotId][weekKey][field] = value === '' ? undefined : Number(value);
   scheduleSave();
   renderDayContent(); // refresh loadbars/suggestions
+}
+
+function editDayFocus(){
+  const day = plan.days.find(d=>d.id===activeDayId);
+  modalCallback = ()=>{
+    const novo = document.getElementById('modalInputFocus').value;
+    if(novo && novo.trim()){
+      day.focusHistory = day.focusHistory || [];
+      day.focusHistory.push({focus: day.focus, until: monthLabel(viewDate)});
+      day.focus = novo.trim();
+      scheduleSave();
+      closeModal();
+      renderDayContent();
+    }
+  };
+  showModal(
+    '<div class="modal-msg">Editar descrição do dia — isso também atualiza o nome mostrado na aba Análise.</div>'+
+    '<label>Descrição</label>'+
+    '<input id="modalInputFocus" value="'+escapeAttr(day.focus)+'">'+
+    '<div class="modal-actions">'+
+      '<button class="btn-cancel" onclick="closeModal()">Cancelar</button>'+
+      '<button class="btn-confirm" onclick="modalConfirmAction()">Salvar</button>'+
+    '</div>'
+  );
 }
 
 function renameSlot(dayId, slotId){
