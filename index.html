@@ -184,6 +184,32 @@
     margin-left:6px;
     text-decoration:underline;
   }
+  .exname-row{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+  }
+  .reorder-btns{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    flex-shrink:0;
+  }
+  .ord-btn{
+    background:var(--panel-alt);
+    border:1px solid var(--border);
+    color:var(--muted);
+    width:20px;
+    height:17px;
+    font-size:8px;
+    line-height:1;
+    border-radius:2px;
+    cursor:pointer;
+    padding:0;
+  }
+  .ord-btn:disabled{opacity:0.2;cursor:default;}
+  .ord-btn:not(:disabled):hover{color:var(--text);border-color:var(--steel);}
+  .exname-text{flex:1;min-width:0;}
   .cell-inputs{
     display:flex;
     gap:3px;
@@ -523,7 +549,6 @@ let viewDate = new Date(); // controls which month is shown in Treino tab
 let activeDayId = null;
 let saveTimer = null;
 
-/* ============ STORAGE ============ */
 /* ============ STORAGE (híbrido: navegador ou Claude) ============ */
 async function storageGet(key){
   if(typeof window.storage !== 'undefined' && window.storage){
@@ -682,14 +707,25 @@ function renderDayContent(){
 
   const tbody = document.createElement('tbody');
 
-  day.slots.forEach(slot=>{
+  day.slots.forEach((slot, slotIdx)=>{
     const tr = document.createElement('tr');
+    const isFirst = slotIdx===0;
+    const isLast = slotIdx===day.slots.length-1;
 
     const nameCell = document.createElement('td');
     nameCell.className = 'exname';
-    nameCell.innerHTML = escapeHtml(slot.name) +
-      '<button class="rename-btn" onclick="renameSlot(\''+day.id+'\',\''+slot.id+'\')">trocar</button>' +
-      '<span class="target">'+slot.sets+'x'+slot.reps+'</span>';
+    nameCell.innerHTML =
+      '<div class="exname-row">'+
+        '<div class="reorder-btns">'+
+          '<button class="ord-btn" '+(isFirst?'disabled':'')+' onclick="moveSlot(\''+day.id+'\',\''+slot.id+'\',-1)" title="Mover para cima">&#9650;</button>'+
+          '<button class="ord-btn" '+(isLast?'disabled':'')+' onclick="moveSlot(\''+day.id+'\',\''+slot.id+'\',1)" title="Mover para baixo">&#9660;</button>'+
+        '</div>'+
+        '<div class="exname-text">'+
+          escapeHtml(slot.name) +
+          '<button class="rename-btn" onclick="renameSlot(\''+day.id+'\',\''+slot.id+'\')">trocar</button>' +
+          '<span class="target">'+slot.sets+'x'+slot.reps+'</span>'+
+        '</div>'+
+      '</div>';
     tr.appendChild(nameCell);
 
     entries[mk][slot.id] = entries[mk][slot.id] || {};
@@ -842,6 +878,18 @@ function addSlot(dayId){
       '<button class="btn-confirm" onclick="modalConfirmAction()">Adicionar</button>'+
     '</div>'
   );
+}
+
+function moveSlot(dayId, slotId, direction){
+  const day = plan.days.find(d=>d.id===dayId);
+  const idx = day.slots.findIndex(s=>s.id===slotId);
+  const newIdx = idx + direction;
+  if(idx===-1 || newIdx<0 || newIdx>=day.slots.length) return;
+  const tmp = day.slots[idx];
+  day.slots[idx] = day.slots[newIdx];
+  day.slots[newIdx] = tmp;
+  scheduleSave();
+  renderDayContent();
 }
 
 /* ============ TROCA DE DIAS (treino <-> descanso) ============ */
