@@ -145,6 +145,15 @@
     letter-spacing:3px;
     text-transform:uppercase;
   }
+  .week-legend{
+    color:var(--muted);
+    font-size:11px;
+    margin-bottom:10px;
+    padding:8px 10px;
+    background:var(--panel-alt);
+    border-left:2px solid var(--steel);
+    border-radius:0 4px 4px 0;
+  }
   table{
     width:100%;
     border-collapse:collapse;
@@ -179,6 +188,41 @@
     color:var(--muted);
     font-weight:400;
     margin-top:2px;
+    cursor:pointer;
+    text-decoration:underline dotted;
+  }
+  td.exname .target:hover{color:var(--text);}
+  .settarget-header{
+    display:flex;
+    gap:8px;
+    font-size:10px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.5px;
+    margin-bottom:6px;
+  }
+  .settarget-header span:first-child{flex:1;}
+  .settarget-header span:not(:first-child){width:80px;}
+  .settarget-row{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    margin-bottom:8px;
+  }
+  .settarget-num{
+    flex:1;
+    font-size:12px;
+    color:var(--text);
+  }
+  .settarget-row input{
+    width:80px;
+    background:var(--panel-alt);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:8px;
+    border-radius:4px;
+    font-size:12px;
+    margin-bottom:0;
   }
   .rename-btn{
     background:none;
@@ -550,7 +594,7 @@
   <div class="modal-box" id="modalBox"></div>
 </div>
 
-<div class="app-version">v1.1</div>
+<div class="app-version">v1.3</div>
 
 <script>
 /* ============ PLANO BASE (dias fixos, slots editáveis) ============ */
@@ -734,6 +778,11 @@ function renderDayContent(){
   const mk = monthKey(viewDate);
   entries[mk] = entries[mk] || {};
 
+  const legend = document.createElement('div');
+  legend.className = 'week-legend';
+  legend.textContent = 'Registre a última série: nº da série feita + reps e kg dela. Toque na meta (ex: "4x6-8") pra definir a meta de cada série.';
+  container.appendChild(legend);
+
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
@@ -765,7 +814,7 @@ function renderDayContent(){
         '<div class="exname-text">'+
           escapeHtml(slot.name) +
           '<button class="rename-btn" onclick="renameSlot(\''+day.id+'\',\''+slot.id+'\')">trocar</button>' +
-          '<span class="target">'+slot.sets+'x'+slot.reps+'</span>'+
+          '<span class="target" onclick="openSetTargetsModal(\''+day.id+'\',\''+slot.id+'\')" title="Toque para definir a meta de cada série">'+targetDisplay(slot)+'</span>'+
         '</div>'+
       '</div>';
     tr.appendChild(nameCell);
@@ -783,11 +832,11 @@ function renderDayContent(){
 
       const cellId = mk+'_'+slot.id+'_'+key;
       td.innerHTML =
-        '<div class="cell-labels"><span>séries</span><span>reps</span><span>kg</span></div>' +
+        '<div class="cell-labels"><span title="Número da última série feita">série</span><span title="Reps da última série">reps</span><span title="Carga (kg) da última série">kg</span></div>' +
         '<div class="cell-inputs">' +
-          '<input type="number" min="0" placeholder="'+slot.sets+'" value="'+(e.sets??'')+'" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'sets\',this.value)">' +
-          '<input type="number" min="0" placeholder="0" value="'+(e.reps??'')+'" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'reps\',this.value)">' +
-          '<input type="number" min="0" step="0.5" placeholder="0" value="'+(e.weight??'')+'" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'weight\',this.value)">' +
+          '<input type="number" min="0" placeholder="'+slot.sets+'" value="'+(e.sets??'')+'" title="Qual foi a última série feita (ex: 4 = 4ª série)" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'sets\',this.value)">' +
+          '<input type="number" min="0" placeholder="0" value="'+(e.reps??'')+'" title="Reps feitas nessa última série" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'reps\',this.value)">' +
+          '<input type="number" min="0" step="0.5" placeholder="0" value="'+(e.weight??'')+'" title="Peso (kg) usado nessa última série" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'weight\',this.value)">' +
         '</div>';
 
       if(e.weight){
@@ -836,6 +885,81 @@ function renderDayContent(){
   container.appendChild(buildSwapControl(day));
 }
 
+function targetDisplay(slot){
+  if(slot.setTargets && slot.setTargets.some(t=>t && t.reps!=null)){
+    const seq = [];
+    for(let i=0;i<slot.sets;i++){
+      const t = slot.setTargets[i];
+      seq.push(t && t.reps!=null ? t.reps : '-');
+    }
+    return seq.join('·')+' reps';
+  }
+  return slot.sets+'x'+slot.reps;
+}
+
+function targetRepsForSet(slot, setNumber){
+  if(slot.setTargets && setNumber>=1){
+    const t = slot.setTargets[setNumber-1];
+    if(t && t.reps!=null) return Number(t.reps);
+  }
+  return parseTopRep(slot.reps);
+}
+
+function targetKgForSet(slot, setNumber){
+  if(slot.setTargets && setNumber>=1){
+    const t = slot.setTargets[setNumber-1];
+    if(t && t.kg!=null) return Number(t.kg);
+  }
+  return null;
+}
+
+function openSetTargetsModal(dayId, slotId){
+  const day = plan.days.find(d=>d.id===dayId);
+  const slot = day.slots.find(s=>s.id===slotId);
+  const legacyTop = parseTopRep(slot.reps);
+
+  let rowsHtml = '';
+  for(let i=1; i<=slot.sets; i++){
+    const existing = slot.setTargets && slot.setTargets[i-1];
+    const repsVal = existing && existing.reps!=null ? existing.reps : legacyTop;
+    const kgVal = existing && existing.kg!=null ? existing.kg : '';
+    rowsHtml +=
+      '<div class="settarget-row">'+
+        '<span class="settarget-num">'+i+'ª série</span>'+
+        '<input type="number" min="0" class="st-reps" placeholder="reps" value="'+repsVal+'">'+
+        '<input type="number" min="0" step="0.5" class="st-kg" placeholder="kg (ref)" value="'+kgVal+'">'+
+      '</div>';
+  }
+
+  showModal(
+    '<div class="modal-msg">Meta por série de <b>'+escapeHtml(slot.name)+'</b> — a sugestão de progressão passa a comparar a última série feita contra a meta daquela série específica (kg é só referência, não entra no cálculo).</div>'+
+    '<div class="settarget-header"><span></span><span>reps</span><span>kg (ref)</span></div>'+
+    rowsHtml+
+    '<div class="modal-actions">'+
+      '<button class="btn-cancel" onclick="closeModal()">Cancelar</button>'+
+      '<button class="btn-confirm" onclick="saveSetTargets(\''+dayId+'\',\''+slotId+'\')">Salvar</button>'+
+    '</div>'
+  );
+}
+
+function saveSetTargets(dayId, slotId){
+  const day = plan.days.find(d=>d.id===dayId);
+  const slot = day.slots.find(s=>s.id===slotId);
+  const repsInputs = document.querySelectorAll('.st-reps');
+  const kgInputs = document.querySelectorAll('.st-kg');
+  const targets = [];
+  repsInputs.forEach((input, idx)=>{
+    targets[idx] = {
+      reps: input.value!=='' ? Number(input.value) : null,
+      kg: kgInputs[idx].value!=='' ? Number(kgInputs[idx].value) : null
+    };
+  });
+  slot.setTargets = targets;
+  scheduleSave();
+  closeModal();
+  renderDayContent();
+}
+
 function buildSuggestionHtml(slot, slotEntries, weeks){
   // find latest week with data
   let latest = null;
@@ -846,13 +970,16 @@ function buildSuggestionHtml(slot, slotEntries, weeks){
     }
   }
   if(!latest) return '';
-  const topRep = parseTopRep(slot.reps);
-  const setsOk = latest.sets && Number(latest.sets) >= slot.sets;
+  const setNum = Number(latest.sets)||0;
+  const topRep = targetRepsForSet(slot, setNum);
+  const refKg = targetKgForSet(slot, setNum);
+  const refKgTxt = refKg!=null ? ' · '+refKg+'kg (ref)' : '';
+  const setsOk = setNum>0 && setNum >= slot.sets;
   const repsOk = latest.reps && Number(latest.reps) >= topRep;
   if(setsOk && repsOk){
-    return '<div class="suggestion ok">Bateu o teto da faixa ('+slot.reps+') em todas as séries. Sugestão: subir carga (+2,5 a 5kg em exercício grande, +1 a 2kg em isolador) e voltar ao mínimo de reps.</div>';
+    return '<div class="suggestion ok">Bateu o teto da '+setNum+'ª série ('+topRep+' reps'+refKgTxt+'). Sugestão: subir carga (+2,5 a 5kg em exercício grande, +1 a 2kg em isolador) e voltar ao mínimo de reps.</div>';
   }
-  return '<div class="suggestion">Ainda dentro da progressão — foco em subir reps até o teto ('+slot.reps+') antes de subir carga.</div>';
+  return '<div class="suggestion">Meta da '+ (setNum||slot.sets) +'ª série: '+topRep+' reps'+refKgTxt+'. Ainda dentro da progressão — foco em subir reps até bater essa meta antes de subir carga.</div>';
 }
 
 function parseTopRep(repsStr){
