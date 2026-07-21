@@ -224,6 +224,28 @@
     font-size:12px;
     margin-bottom:0;
   }
+  .settarget-row input:disabled{opacity:0.35;}
+  .cell-inputs input:disabled{opacity:0.45;}
+  .bw-toggle{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    font-size:12px;
+    color:var(--text);
+    background:var(--panel-alt);
+    border:1px solid var(--border);
+    border-radius:4px;
+    padding:9px 10px;
+    margin-bottom:6px;
+    cursor:pointer;
+  }
+  .bw-toggle input{width:auto;margin:0;}
+  .bw-hint{
+    font-size:10px;
+    color:var(--muted);
+    margin:0 0 12px 0;
+    line-height:1.4;
+  }
   .rename-btn{
     background:none;
     border:none;
@@ -594,7 +616,7 @@
   <div class="modal-box" id="modalBox"></div>
 </div>
 
-<div class="app-version">v1.3</div>
+<div class="app-version">v1.5</div>
 
 <script>
 /* ============ PLANO BASE (dias fixos, slots editáveis) ============ */
@@ -780,7 +802,7 @@ function renderDayContent(){
 
   const legend = document.createElement('div');
   legend.className = 'week-legend';
-  legend.textContent = 'Registre a última série: nº da série feita + reps e kg dela. Toque na meta (ex: "4x6-8") pra definir a meta de cada série.';
+  legend.textContent = 'Registre a última série (máx. 4): nº da série + reps e kg dela (aceita decimal, ex: 62,5). Toque na meta abaixo do exercício para definir reps/kg de cada série ou marcar peso corporal.';
   container.appendChild(legend);
 
   const table = document.createElement('table');
@@ -831,12 +853,16 @@ function renderDayContent(){
       const e = slotEntries[key] || {};
 
       const cellId = mk+'_'+slot.id+'_'+key;
+      const slotIsBW = !!slot.bodyweight;
+      const slotTotalSets = effectiveSets(slot);
       td.innerHTML =
-        '<div class="cell-labels"><span title="Número da última série feita">série</span><span title="Reps da última série">reps</span><span title="Carga (kg) da última série">kg</span></div>' +
+        '<div class="cell-labels"><span title="Número da última série feita (máx. 4)">série</span><span title="Reps da última série">reps</span><span title="'+(slotIsBW?'Exercício de peso corporal — sem carga externa':'Carga (kg) da última série — aceita decimal')+'">'+(slotIsBW?'PC':'kg')+'</span></div>' +
         '<div class="cell-inputs">' +
-          '<input type="number" min="0" placeholder="'+slot.sets+'" value="'+(e.sets??'')+'" title="Qual foi a última série feita (ex: 4 = 4ª série)" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'sets\',this.value)">' +
+          '<input type="number" min="0" max="4" placeholder="'+slotTotalSets+'" value="'+(e.sets??'')+'" title="Qual foi a última série feita (máx. 4)" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'sets\',this.value)">' +
           '<input type="number" min="0" placeholder="0" value="'+(e.reps??'')+'" title="Reps feitas nessa última série" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'reps\',this.value)">' +
-          '<input type="number" min="0" step="0.5" placeholder="0" value="'+(e.weight??'')+'" title="Peso (kg) usado nessa última série" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'weight\',this.value)">' +
+          (slotIsBW
+            ? '<input type="text" value="PC" disabled title="Exercício de peso corporal — progressão medida por reps">'
+            : '<input type="text" inputmode="decimal" placeholder="0" value="'+(e.weight??'')+'" title="Peso (kg) da última série — aceita decimal (ex: 62,5)" onchange="updateEntry(\''+mk+'\',\''+slot.id+'\',\''+key+'\',\'weight\',this.value)">') +
         '</div>';
 
       if(e.weight){
@@ -885,16 +911,30 @@ function renderDayContent(){
   container.appendChild(buildSwapControl(day));
 }
 
+function effectiveSets(slot){
+  // Quantas séries o exercício realmente tem: a última com meta preenchida (máx. 4).
+  if(slot.setTargets){
+    const limit = Math.min(slot.setTargets.length, 4);
+    for(let i=limit-1; i>=0; i--){
+      const t = slot.setTargets[i];
+      if(t && t.reps!=null) return i+1;
+    }
+  }
+  return Math.min(slot.sets || 4, 4);
+}
+
 function targetDisplay(slot){
+  const bw = slot.bodyweight ? ' · PC' : '';
   if(slot.setTargets && slot.setTargets.some(t=>t && t.reps!=null)){
+    const n = effectiveSets(slot);
     const seq = [];
-    for(let i=0;i<slot.sets;i++){
+    for(let i=0;i<n;i++){
       const t = slot.setTargets[i];
       seq.push(t && t.reps!=null ? t.reps : '-');
     }
-    return seq.join('·')+' reps';
+    return seq.join('·')+' reps'+bw;
   }
-  return slot.sets+'x'+slot.reps;
+  return slot.sets+'x'+slot.reps+bw;
 }
 
 function targetRepsForSet(slot, setNumber){
@@ -917,22 +957,26 @@ function openSetTargetsModal(dayId, slotId){
   const day = plan.days.find(d=>d.id===dayId);
   const slot = day.slots.find(s=>s.id===slotId);
   const legacyTop = parseTopRep(slot.reps);
+  const planned = Math.min(slot.sets || 4, 4);
+  const isBW = !!slot.bodyweight;
 
   let rowsHtml = '';
-  for(let i=1; i<=slot.sets; i++){
+  for(let i=1; i<=4; i++){
     const existing = slot.setTargets && slot.setTargets[i-1];
-    const repsVal = existing && existing.reps!=null ? existing.reps : legacyTop;
-    const kgVal = existing && existing.kg!=null ? existing.kg : '';
+    const repsVal = (existing && existing.reps!=null) ? existing.reps : (i<=planned ? legacyTop : '');
+    const kgVal = (existing && existing.kg!=null) ? existing.kg : '';
     rowsHtml +=
       '<div class="settarget-row">'+
         '<span class="settarget-num">'+i+'ª série</span>'+
         '<input type="number" min="0" class="st-reps" placeholder="reps" value="'+repsVal+'">'+
-        '<input type="number" min="0" step="0.5" class="st-kg" placeholder="kg (ref)" value="'+kgVal+'">'+
+        '<input type="text" inputmode="decimal" class="st-kg" placeholder="'+(isBW?'PC':'kg')+'" value="'+kgVal+'"'+(isBW?' disabled':'')+'>'+
       '</div>';
   }
 
   showModal(
-    '<div class="modal-msg">Meta por série de <b>'+escapeHtml(slot.name)+'</b> — a sugestão de progressão passa a comparar a última série feita contra a meta daquela série específica (kg é só referência, não entra no cálculo).</div>'+
+    '<div class="modal-msg">Meta por série de <b>'+escapeHtml(slot.name)+'</b> — deixe em branco as séries que não usa (máx. 4). A sugestão compara a última série registrada contra a meta dela.</div>'+
+    '<label class="bw-toggle"><input type="checkbox" id="modalBodyweight" '+(isBW?'checked':'')+' onchange="toggleBodyweightFields()"> Peso corporal (não usa peso neste exercício)</label>'+
+    '<div class="bw-hint">Marcado: sem carga externa. A progressão passa a ser medida só por reps, e o campo kg da semana fica travado como "PC".</div>'+
     '<div class="settarget-header"><span></span><span>reps</span><span>kg (ref)</span></div>'+
     rowsHtml+
     '<div class="modal-actions">'+
@@ -942,18 +986,31 @@ function openSetTargetsModal(dayId, slotId){
   );
 }
 
+function toggleBodyweightFields(){
+  const on = document.getElementById('modalBodyweight').checked;
+  document.querySelectorAll('.st-kg').forEach(inp=>{
+    inp.disabled = on;
+    inp.placeholder = on ? 'PC' : 'kg';
+    if(on) inp.value = '';
+  });
+}
+
 function saveSetTargets(dayId, slotId){
   const day = plan.days.find(d=>d.id===dayId);
   const slot = day.slots.find(s=>s.id===slotId);
+  const bw = document.getElementById('modalBodyweight').checked;
   const repsInputs = document.querySelectorAll('.st-reps');
   const kgInputs = document.querySelectorAll('.st-kg');
   const targets = [];
   repsInputs.forEach((input, idx)=>{
+    const repsNum = parseDecimal(input.value);
+    const kgNum = bw ? undefined : parseDecimal(kgInputs[idx].value);
     targets[idx] = {
-      reps: input.value!=='' ? Number(input.value) : null,
-      kg: kgInputs[idx].value!=='' ? Number(kgInputs[idx].value) : null
+      reps: repsNum != null ? repsNum : null,
+      kg: kgNum != null ? kgNum : null
     };
   });
+  slot.bodyweight = bw;
   slot.setTargets = targets;
   scheduleSave();
   closeModal();
@@ -970,16 +1027,37 @@ function buildSuggestionHtml(slot, slotEntries, weeks){
     }
   }
   if(!latest) return '';
+  const totalSets = effectiveSets(slot);
+  const isBW = !!slot.bodyweight;
   const setNum = Number(latest.sets)||0;
-  const topRep = targetRepsForSet(slot, setNum);
-  const refKg = targetKgForSet(slot, setNum);
-  const refKgTxt = refKg!=null ? ' · '+refKg+'kg (ref)' : '';
-  const setsOk = setNum>0 && setNum >= slot.sets;
-  const repsOk = latest.reps && Number(latest.reps) >= topRep;
-  if(setsOk && repsOk){
-    return '<div class="suggestion ok">Bateu o teto da '+setNum+'ª série ('+topRep+' reps'+refKgTxt+'). Sugestão: subir carga (+2,5 a 5kg em exercício grande, +1 a 2kg em isolador) e voltar ao mínimo de reps.</div>';
+  const refSet = setNum || totalSets;                       // a série que foi registrada
+  const targetSet = Math.min(refSet, totalSets) || totalSets;
+  const topRep = targetRepsForSet(slot, targetSet);
+  const refKg = isBW ? null : targetKgForSet(slot, targetSet);
+  const refKgTxt = refKg!=null ? ' · '+refKg+'kg (ref)' : (isBW ? ' · peso corporal' : '');
+  const isFinal = refSet >= totalSets;
+
+  if(!latest.reps){
+    return '<div class="suggestion">Meta da '+refSet+'ª série: '+topRep+' reps'+refKgTxt+'. Registre as reps para saber se bateu.</div>';
   }
-  return '<div class="suggestion">Meta da '+ (setNum||slot.sets) +'ª série: '+topRep+' reps'+refKgTxt+'. Ainda dentro da progressão — foco em subir reps até bater essa meta antes de subir carga.</div>';
+
+  const doneReps = Number(latest.reps);
+  const placar = doneReps+'/'+topRep+' reps'+refKgTxt;
+
+  if(doneReps >= topRep){
+    const head = 'Meta batida na '+refSet+'ª série ('+placar+').';
+    if(isFinal){
+      const advice = isBW
+        ? ' Sugestão: subir a meta de reps ou aumentar a dificuldade (pausa na contração, cadência mais lenta, lastro).'
+        : ' Sugestão: subir carga (+2,5 a 5kg em exercício grande, +1 a 2kg em isolador) e voltar ao mínimo de reps.';
+      return '<div class="suggestion ok">'+head+' Era a última série do exercício.'+advice+'</div>';
+    }
+    return '<div class="suggestion ok">'+head+' Ainda faltam séries até a '+totalSets+'ª para fechar a progressão.</div>';
+  }
+
+  const falta = topRep - doneReps;
+  const tail = isFinal ? '' : ' Ainda faltam séries até a '+totalSets+'ª.';
+  return '<div class="suggestion">Meta não batida na '+refSet+'ª série ('+placar+') — faltam '+falta+' reps.'+tail+'</div>';
 }
 
 function parseTopRep(repsStr){
@@ -999,11 +1077,20 @@ function maxWeightForSlot(slotId){
   return max;
 }
 
+function parseDecimal(value){
+  const raw = String(value).replace(',', '.').trim();
+  if(raw === '') return undefined;
+  const num = Number(raw);
+  return isNaN(num) ? undefined : num;
+}
+
 function updateEntry(mk, slotId, weekKey, field, value){
   entries[mk] = entries[mk] || {};
   entries[mk][slotId] = entries[mk][slotId] || {};
   entries[mk][slotId][weekKey] = entries[mk][slotId][weekKey] || {};
-  entries[mk][slotId][weekKey][field] = value === '' ? undefined : Number(value);
+  let num = parseDecimal(value);
+  if(field === 'sets' && num != null && num > 4) num = 4;
+  entries[mk][slotId][weekKey][field] = num;
   scheduleSave();
   renderDayContent(); // refresh loadbars/suggestions
 }
@@ -1298,7 +1385,7 @@ function onDiaChange(){
 let weeklyChartInstance = null;
 let monthlyChartInstance = null;
 
-function volumeFor(entry){
+function volumeFor(entry, isBW){
   // returns null when there's no data (so the chart shows a gap, not a false zero)
   if(!entry) return null;
   const hasExtra = entry.extra && entry.extra.parts && entry.extra.parts.length;
@@ -1307,10 +1394,13 @@ function volumeFor(entry){
   const s = Number(entry.sets)||0;
   const r = Number(entry.reps)||0;
   const w = Number(entry.weight)||0;
-  let vol = s*r*w;
+  // Peso corporal: sem carga externa, o volume vira reps totais (séries × reps).
+  let vol = isBW ? s*r : s*r*w;
   if(hasExtra){
     entry.extra.parts.forEach(p=>{
-      vol += (Number(p.weight)||0) * (Number(p.reps)||0);
+      const pr = Number(p.reps)||0;
+      const pw = Number(p.weight)||0;
+      vol += isBW ? pr : pw*pr;
     });
   }
   return vol;
@@ -1327,9 +1417,16 @@ function renderCharts(){
   // WEEKLY (within selected month, shown in Treino tab's current viewDate month)
   const weeks = weeksInMonth(viewDate.getFullYear(), viewDate.getMonth());
   const weekLabels = weeks.map(w=>'Sem '+w.index);
+  const slotObj = slotById(slotId);
+  const chartIsBW = !!(slotObj && slotObj.bodyweight);
+  const volLabel = chartIsBW ? 'Volume (séries × reps — peso corporal)' : 'Volume (séries × reps × kg)';
   const weekData = weeks.map(w=>{
     const e = entries[mk] && entries[mk][slotId] ? entries[mk][slotId][String(w.index)] : null;
-    return volumeFor(e);
+    return volumeFor(e, chartIsBW);
+  });
+  const weekReps = weeks.map(w=>{
+    const e = entries[mk] && entries[mk][slotId] ? entries[mk][slotId][String(w.index)] : null;
+    return (e && e.reps) ? Number(e.reps) : null;
   });
 
   const wCtx = document.getElementById('weeklyChart');
@@ -1338,17 +1435,33 @@ function renderCharts(){
     type:'line',
     data:{
       labels: weekLabels,
-      datasets:[{
-        label:'Volume (séries × reps × kg)',
-        data: weekData,
-        borderColor:'#D6402C',
-        backgroundColor:'rgba(214,64,44,0.15)',
-        fill:true,
-        tension:0.25,
-        spanGaps:false,
-        pointRadius:4,
-        pointBackgroundColor:'#D6402C'
-      }]
+      datasets:[
+        {
+          label: volLabel,
+          data: weekData,
+          borderColor:'#D6402C',
+          backgroundColor:'rgba(214,64,44,0.15)',
+          fill:true,
+          tension:0.25,
+          spanGaps:false,
+          pointRadius:4,
+          pointBackgroundColor:'#D6402C',
+          yAxisID:'y'
+        },
+        {
+          label:'Reps da última série',
+          data: weekReps,
+          borderColor:'#5B6472',
+          backgroundColor:'transparent',
+          borderDash:[5,4],
+          fill:false,
+          tension:0.25,
+          spanGaps:false,
+          pointRadius:3,
+          pointBackgroundColor:'#5B6472',
+          yAxisID:'y1'
+        }
+      ]
     },
     options:{
       plugins:{
@@ -1360,22 +1473,40 @@ function renderCharts(){
       },
       scales:{
         x:{ticks:{color:'#94949A'}, grid:{color:'#2C2C30'}},
-        y:{ticks:{color:'#94949A'}, grid:{color:'#2C2C30'}, beginAtZero:true}
+        y:{
+          position:'left',
+          ticks:{color:'#94949A'}, grid:{color:'#2C2C30'}, beginAtZero:true,
+          title:{display:true, text: chartIsBW ? 'Volume (reps totais)' : 'Volume (kg levantados)', color:'#94949A', font:{size:11}}
+        },
+        y1:{
+          position:'right',
+          ticks:{color:'#94949A'}, grid:{drawOnChartArea:false}, beginAtZero:true,
+          title:{display:true, text:'Reps da última série', color:'#94949A', font:{size:11}}
+        }
       }
     }
   });
 
   const validWeekData = weekData.filter(v=>v>0);
+  const validReps = weekReps.filter(v=>v!=null);
   const weeklyInsight = document.getElementById('weeklyInsight');
+  let insightTxt = '';
   if(validWeekData.length>=2){
     const first = validWeekData[0], last = validWeekData[validWeekData.length-1];
     const pct = first>0 ? Math.round(((last-first)/first)*100) : 0;
-    weeklyInsight.textContent = pct>=0
+    insightTxt = pct>=0
       ? 'Volume subiu '+pct+'% da primeira à última semana registrada neste mês.'
       : 'Volume caiu '+Math.abs(pct)+'% da primeira à última semana registrada — normal em semana de deload, atenção se não for o caso.';
   } else {
-    weeklyInsight.textContent = 'Registre pelo menos duas semanas neste mês para ver a tendência.';
+    insightTxt = 'Registre pelo menos duas semanas neste mês para ver a tendência.';
   }
+  if(validReps.length>=2){
+    const rFirst = validReps[0], rLast = validReps[validReps.length-1];
+    const dR = rLast - rFirst;
+    const dRtxt = dR>0 ? ' (+'+dR+' reps)' : (dR<0 ? ' ('+dR+' reps)' : ' (estável)');
+    insightTxt += ' Reps da última série: '+rFirst+' → '+rLast+dRtxt+'.';
+  }
+  weeklyInsight.textContent = insightTxt;
 
   // Deltas semana a semana (reps e kg) para o exercício selecionado
   const deltaBox = document.getElementById('weeklyDeltas');
@@ -1409,7 +1540,7 @@ function renderCharts(){
   });
   const monthData = monthKeys.map(k=>{
     const slotData = entries[k][slotId];
-    return Object.values(slotData).reduce((sum,e)=> sum + volumeFor(e), 0);
+    return Object.values(slotData).reduce((sum,e)=> sum + (volumeFor(e, chartIsBW)||0), 0);
   });
 
   const mCtx = document.getElementById('monthlyChart');
@@ -1441,7 +1572,7 @@ function renderCharts(){
           x:{ticks:{color:'#94949A'}, grid:{display:false}},
           y:{
             ticks:{color:'#94949A'}, grid:{color:'#2C2C30'}, beginAtZero:true,
-            title:{display:true, text:'Volume total (kg levantados no mês)', color:'#94949A', font:{size:11}}
+            title:{display:true, text: chartIsBW ? 'Volume total (reps no mês)' : 'Volume total (kg levantados no mês)', color:'#94949A', font:{size:11}}
           }
         }
       }
@@ -1470,12 +1601,17 @@ function fmtDelta(v, unit){
   return '<span class="delta-zero">0 '+unit+'</span>';
 }
 
-function slotNameById(slotId){
+function slotById(slotId){
   for(const d of plan.days){
     const s = d.slots.find(x=>x.id===slotId);
-    if(s) return s.name;
+    if(s) return s;
   }
-  return slotId;
+  return null;
+}
+
+function slotNameById(slotId){
+  const s = slotById(slotId);
+  return s ? s.name : slotId;
 }
 
 function monthDeltasFor(mk){
