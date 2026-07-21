@@ -691,7 +691,7 @@
   <div class="modal-box" id="modalBox"></div>
 </div>
 
-<div class="app-version">v1.9</div>
+<div class="app-version">v2.0</div>
 
 <script>
 /* ============ PLANO BASE (dias fixos, slots editáveis) ============ */
@@ -988,30 +988,38 @@ function renderDayContent(){
   container.appendChild(buildSwapControl(day));
 }
 
-/* ============ TIPO DE EXERCÍCIO (composto x isolador) ============ */
-// Mínimo de reps ao subir carga: 3 em exercício grande, 8 em isolador.
-const MIN_REPS_COMPOSTO = 3;
-const MIN_REPS_ISOLADOR = 8;
+/* ============ TIPO DE EXERCÍCIO (peso livre x máquina/cabo) ============ */
+// Mínimo de reps ao subir carga: 5 em peso livre, 8 em máquina ou cabo.
+const MIN_REPS_LIVRE = 5;
+const MIN_REPS_MAQUINA = 8;
 
-const PADRAO_COMPOSTO = /agachament|supino|terra|remada|puxada|barra fixa|desenvolviment|stiff|mergulho|paralelas|leg press|hack|avanco|afundo|passada|elevacao pelvica|bom dia|cavalinho|t-bar|push press|clean|arranco/;
+// Palavras que indicam máquina ou cabo. Sem match = peso livre (barra, halteres, peso do corpo).
+const PADRAO_MAQUINA = /maquina|smith|cabo|polia|pulley|crossover|peck deck|voador|pulldown|pull down|puxada|graviton|leg press|hack|flexora|extensora|cadeira|adutora|abdutora|panturrilha|face pull|articulad/;
 
 function semAcento(txt){
   return String(txt || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 }
 
 // Usa a escolha manual se existir; senão detecta pelo nome do exercício.
-function isCompound(slot){
-  if(slot.kind === 'composto') return true;
-  if(slot.kind === 'isolador') return false;
-  return PADRAO_COMPOSTO.test(semAcento(slot.name));
+// 'composto'/'isolador' são valores antigos, mantidos para não perder configuração já salva.
+function isFreeWeight(slot){
+  if(slot.kind === 'livre' || slot.kind === 'composto') return true;
+  if(slot.kind === 'maquina' || slot.kind === 'isolador') return false;
+  return !PADRAO_MAQUINA.test(semAcento(slot.name));
+}
+
+function tipoLabel(slot){
+  return isFreeWeight(slot) ? 'peso livre' : 'máquina ou cabo';
 }
 
 function minRepsFor(slot){
-  return isCompound(slot) ? MIN_REPS_COMPOSTO : MIN_REPS_ISOLADOR;
+  return isFreeWeight(slot) ? MIN_REPS_LIVRE : MIN_REPS_MAQUINA;
 }
 
 function incrementoFor(slot){
-  return isCompound(slot) ? '+2,5 a 5kg' : '+1 a 2kg';
+  return isFreeWeight(slot)
+    ? '+2,5 a 5kg na barra, ou o próximo par de halteres'
+    : '+1 placa, geralmente 2,5 a 5kg';
 }
 
 function effectiveSets(slot){
@@ -1062,7 +1070,7 @@ function openSetTargetsModal(dayId, slotId){
   const legacyTop = parseTopRep(slot.reps);
   const planned = Math.min(slot.sets || 4, 4);
   const isBW = !!slot.bodyweight;
-  const comp = isCompound(slot);
+  const livre = isFreeWeight(slot);
 
   let rowsHtml = '';
   for(let i=1; i<=4; i++){
@@ -1083,10 +1091,10 @@ function openSetTargetsModal(dayId, slotId){
     '<div class="bw-hint">Marcado: sem carga externa. A progressão passa a ser medida só por reps, e o campo kg da semana fica travado como "PC".</div>'+
     '<label>Tipo de exercício</label>'+
     '<select id="modalKind">'+
-      '<option value="composto"'+(comp?' selected':'')+'>Exercício grande / composto — mínimo '+MIN_REPS_COMPOSTO+' reps</option>'+
-      '<option value="isolador"'+(comp?'':' selected')+'>Isolador — mínimo '+MIN_REPS_ISOLADOR+' reps</option>'+
+      '<option value="livre"'+(livre?' selected':'')+'>Peso livre (barra, halteres, peso do corpo) — mínimo '+MIN_REPS_LIVRE+' reps</option>'+
+      '<option value="maquina"'+(livre?'':' selected')+'>Máquina ou cabo — mínimo '+MIN_REPS_MAQUINA+' reps</option>'+
     '</select>'+
-    '<div class="bw-hint">Detectado pelo nome do exercício; corrija aqui se precisar. Define o mínimo de reps ao subir carga e o tamanho do incremento (+2,5 a 5kg em composto, +1 a 2kg em isolador).</div>'+
+    '<div class="bw-hint">Detectado pelo nome do exercício; corrija aqui se precisar. Define o mínimo de reps ao voltar depois de subir carga.</div>'+
     '<div class="settarget-header"><span></span><span>reps</span><span>kg (ref)</span></div>'+
     rowsHtml+
     '<div class="modal-actions">'+
@@ -1159,10 +1167,9 @@ function buildSuggestionHtml(slot, slotEntries, weeks){
   if(doneReps >= topRep){
     const head = 'Meta batida na '+refSet+'ª série ('+placar+').';
     if(isFinal){
-      const kindTxt = isCompound(slot) ? 'exercício grande' : 'isolador';
       const advice = isBW
         ? ' Sugestão: subir a meta de reps ou aumentar a dificuldade (pausa na contração, cadência mais lenta, lastro).'
-        : ' Sugestão: subir carga ('+incrementoFor(slot)+') e voltar ao mínimo de reps (mínimo '+minRepsFor(slot)+' reps, '+kindTxt+').';
+        : ' Sugestão: subir carga ('+incrementoFor(slot)+') e voltar ao mínimo de reps (mínimo '+minRepsFor(slot)+' reps, '+tipoLabel(slot)+').';
       return '<div class="suggestion ok">'+head+' Era a última série do exercício.'+advice+'</div>';
     }
     return '<div class="suggestion ok">'+head+' Ainda faltam séries até a '+totalSets+'ª para fechar a progressão.</div>';
