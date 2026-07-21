@@ -178,9 +178,18 @@
   th.current-week{color:var(--accent);}
   td.exname{
     text-align:left;
-    min-width:190px;
+    min-width:225px;
     font-size:13px;
     font-weight:600;
+  }
+  .th-hint{
+    display:block;
+    font-weight:400;
+    text-transform:none;
+    letter-spacing:0;
+    color:var(--steel);
+    font-size:9px;
+    margin-top:3px;
   }
   td.exname .target{
     display:block;
@@ -192,6 +201,16 @@
     text-decoration:underline dotted;
   }
   td.exname .target:hover{color:var(--text);}
+  .target-hint{
+    display:block;
+    font-size:9px;
+    color:var(--steel);
+    font-weight:400;
+    margin-top:1px;
+    cursor:pointer;
+    text-decoration:underline dotted;
+  }
+  .target-hint:hover{color:var(--text);}
   .settarget-header{
     display:flex;
     gap:8px;
@@ -246,6 +265,50 @@
     margin:0 0 12px 0;
     line-height:1.4;
   }
+  .notice-bar{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    align-items:center;
+    justify-content:space-between;
+    padding:11px 13px;
+    border-radius:5px;
+    font-size:12px;
+    line-height:1.45;
+    margin-bottom:16px;
+  }
+  .notice-bar.alert{
+    background:#2A1613;
+    border:1px solid var(--accent-dim);
+    color:var(--text);
+  }
+  .notice-bar.info{
+    background:var(--panel-alt);
+    border:1px solid var(--border);
+    color:var(--text);
+  }
+  .notice-actions{display:flex;gap:6px;flex-wrap:wrap;}
+  .notice-btn{
+    background:var(--panel);
+    border:1px solid var(--border);
+    color:var(--text);
+    padding:7px 12px;
+    border-radius:4px;
+    font-size:11px;
+    font-weight:700;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .notice-btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .notice-btn:hover{border-color:var(--steel);}
+  .help-block{
+    background:var(--panel-alt);
+    border-radius:4px;
+    padding:9px 11px;
+    font-size:12px;
+    line-height:1.5;
+    margin-bottom:8px;
+  }
   .rename-btn{
     background:none;
     border:none;
@@ -263,8 +326,17 @@
   .reorder-btns{
     display:flex;
     flex-direction:column;
+    align-items:center;
     gap:2px;
     flex-shrink:0;
+    width:42px;
+  }
+  .ord-label{
+    font-size:8px;
+    color:var(--steel);
+    line-height:1.15;
+    text-align:center;
+    margin-top:3px;
   }
   .ord-btn{
     background:var(--panel-alt);
@@ -548,7 +620,7 @@
   .delta-neg{color:var(--warn);font-weight:700;}
   .delta-zero{color:var(--muted);}
   @media(max-width:600px){
-    td.exname{min-width:130px;font-size:12px;}
+    td.exname{min-width:160px;font-size:12px;}
     .cell-inputs input{width:30px;}
     .cell-labels span{width:30px;}
   }
@@ -566,6 +638,8 @@
 </div>
 
 <div class="wrap">
+
+  <div id="noticeBar"></div>
 
   <!-- TREINO TAB -->
   <div id="tabTreino">
@@ -616,7 +690,7 @@
   <div class="modal-box" id="modalBox"></div>
 </div>
 
-<div class="app-version">v1.5</div>
+<div class="app-version">v1.7</div>
 
 <script>
 /* ============ PLANO BASE (dias fixos, slots editáveis) ============ */
@@ -808,7 +882,7 @@ function renderDayContent(){
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const headRow = document.createElement('tr');
-  headRow.innerHTML = '<th style="text-align:left;">Exercício</th>';
+  headRow.innerHTML = '<th style="text-align:left;">Exercício<span class="th-hint">(organize com os exercícios do seu treino)</span></th>';
   weeks.forEach(w=>{
     const th = document.createElement('th');
     th.className = (curWeek===w.index) ? 'current-week' : '';
@@ -830,13 +904,15 @@ function renderDayContent(){
     nameCell.innerHTML =
       '<div class="exname-row">'+
         '<div class="reorder-btns">'+
-          '<button class="ord-btn" '+(isFirst?'disabled':'')+' onclick="moveSlot(\''+day.id+'\',\''+slot.id+'\',-1)" title="Mover para cima">&#9650;</button>'+
-          '<button class="ord-btn" '+(isLast?'disabled':'')+' onclick="moveSlot(\''+day.id+'\',\''+slot.id+'\',1)" title="Mover para baixo">&#9660;</button>'+
+          '<button class="ord-btn" '+(isFirst?'disabled':'')+' onclick="moveSlot(\''+day.id+'\',\''+slot.id+'\',-1)" title="Mover exercício para cima">&#9650;</button>'+
+          '<button class="ord-btn" '+(isLast?'disabled':'')+' onclick="moveSlot(\''+day.id+'\',\''+slot.id+'\',1)" title="Mover exercício para baixo">&#9660;</button>'+
+          '<span class="ord-label">mover exercício</span>'+
         '</div>'+
         '<div class="exname-text">'+
           escapeHtml(slot.name) +
-          '<button class="rename-btn" onclick="renameSlot(\''+day.id+'\',\''+slot.id+'\')">trocar</button>' +
-          '<span class="target" onclick="openSetTargetsModal(\''+day.id+'\',\''+slot.id+'\')" title="Toque para definir a meta de cada série">'+targetDisplay(slot)+'</span>'+
+          '<button class="rename-btn" onclick="renameSlot(\''+day.id+'\',\''+slot.id+'\')">trocar exercício</button>' +
+          '<span class="target" onclick="openSetTargetsModal(\''+day.id+'\',\''+slot.id+'\')" title="Toque para definir série, reps e kg de cada série">'+targetDisplay(slot)+'</span>'+
+          '<span class="target-hint" onclick="openSetTargetsModal(\''+day.id+'\',\''+slot.id+'\')">trocar série e reps</span>'+
         '</div>'+
       '</div>';
     tr.appendChild(nameCell);
@@ -1684,11 +1760,177 @@ function renderMonthlyDetail(){
   }
 }
 
+/* ============ AMBIENTE, INSTALACAO E ARMAZENAMENTO ============ */
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e)=>{
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  renderNotice();
+});
+window.addEventListener('appinstalled', ()=>{
+  deferredInstallPrompt = null;
+  renderNotice();
+});
+
+function storageWorks(){
+  try{
+    const k = '__logbook_test';
+    localStorage.setItem(k, '1');
+    const ok = localStorage.getItem(k) === '1';
+    localStorage.removeItem(k);
+    return ok;
+  }catch(e){ return false; }
+}
+
+function isStandalone(){
+  try{
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+      || window.navigator.standalone === true;
+  }catch(e){ return false; }
+}
+
+// Navegador interno de outro app (Instagram, Facebook, etc): nao instala e nao guarda dados de forma confiavel.
+function isInAppBrowser(){
+  const ua = navigator.userAgent || '';
+  return /FBAN|FBAV|FB_IAB|Instagram|Line\//i.test(ua) || /Twitter|LinkedInApp|MicroMessenger|; wv\)/i.test(ua);
+}
+
+function isChromeLike(){
+  const ua = navigator.userAgent || '';
+  return /Chrome|CriOS/i.test(ua) && !/Edg\//i.test(ua) && !isInAppBrowser();
+}
+
+// Pede ao navegador para nao descartar os dados quando faltar espaco.
+async function requestPersistentStorage(){
+  try{
+    if(navigator.storage && navigator.storage.persist){
+      const already = await navigator.storage.persisted();
+      if(!already) await navigator.storage.persist();
+    }
+  }catch(e){ /* sem suporte, segue normal */ }
+}
+
+function copyAppLink(btn){
+  const url = window.location.href.split('#')[0];
+  const done = ()=>{
+    if(btn){
+      const original = btn.textContent;
+      btn.textContent = 'Link copiado';
+      setTimeout(()=>{ btn.textContent = original; }, 2000);
+    }
+  };
+  try{
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(url).then(done).catch(()=>fallbackCopy(url, done));
+      return;
+    }
+  }catch(e){ /* tenta o fallback */ }
+  fallbackCopy(url, done);
+}
+
+function fallbackCopy(text, done){
+  try{
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    done();
+  }catch(e){ /* nada a fazer */ }
+}
+
+async function triggerInstall(){
+  if(!deferredInstallPrompt){ showInstallHelp(); return; }
+  try{
+    deferredInstallPrompt.prompt();
+    await deferredInstallPrompt.userChoice;
+  }catch(e){ /* usuario fechou o prompt */ }
+  deferredInstallPrompt = null;
+  renderNotice();
+}
+
+function dismissInstallNotice(){
+  try{ localStorage.setItem('install_notice_off', '1'); }catch(e){}
+  renderNotice();
+}
+
+function showInstallHelp(){
+  showModal(
+    '<div class="modal-msg"><b>Instalar o Logbook no aparelho</b></div>'+
+    '<div class="help-block"><b>Android — Google Chrome</b><br>Menu ⋮ no canto superior direito → "Instalar app" ou "Adicionar à tela inicial".</div>'+
+    '<div class="help-block"><b>Computador — Google Chrome</b><br>Ícone de instalar na barra de endereço, ou menu ⋮ → "Instalar Logbook de Treino".</div>'+
+    '<div class="help-block"><b>iPhone — Safari</b><br>Botão compartilhar → "Adicionar à Tela de Início".</div>'+
+    '<div class="bw-hint">Os dados ficam salvos na memória deste navegador, neste aparelho. Limpar os dados do navegador apaga o histórico de treino.</div>'+
+    '<div class="modal-actions"><button class="btn-confirm" onclick="closeModal()">Entendi</button></div>'
+  );
+}
+
+function renderNotice(){
+  const bar = document.getElementById('noticeBar');
+  if(!bar) return;
+
+  // Rodando dentro do Claude: o aviso de instalacao nao se aplica.
+  if(typeof window.storage !== 'undefined' && window.storage){
+    bar.innerHTML = '';
+    bar.className = '';
+    return;
+  }
+
+  bar.innerHTML = '';
+  bar.className = '';
+
+  // 1. Navegador interno de outro app.
+  if(isInAppBrowser()){
+    bar.className = 'notice-bar alert';
+    bar.innerHTML =
+      '<div><b>Você abriu dentro de outro aplicativo.</b><br>'+
+      'Nesse modo não dá para instalar o app e os dados podem se perder. Abra este link no <b>Google Chrome</b>.</div>'+
+      '<div class="notice-actions"><button class="notice-btn primary" onclick="copyAppLink(this)">Copiar link</button></div>';
+    return;
+  }
+
+  // 2. Armazenamento bloqueado: nada sera salvo.
+  if(!storageWorks()){
+    bar.className = 'notice-bar alert';
+    bar.innerHTML =
+      '<div><b>Este navegador não está salvando os dados.</b><br>'+
+      'Abra no <b>Google Chrome</b>, em janela normal (não anônima), para registrar o treino e instalar o app.</div>'+
+      '<div class="notice-actions"><button class="notice-btn primary" onclick="copyAppLink(this)">Copiar link</button></div>';
+    return;
+  }
+
+  // 3. Ja instalado: nada a avisar.
+  if(isStandalone()) return;
+
+  // 4. Aviso dispensado pelo usuario.
+  try{ if(localStorage.getItem('install_notice_off') === '1') return; }catch(e){}
+
+  // 5. Convite para instalar.
+  const chrome = isChromeLike();
+  bar.className = 'notice-bar info';
+  bar.innerHTML =
+    '<div><b>Instale na tela inicial</b> para abrir como app e manter o histórico salvo neste aparelho.'+
+    (chrome ? '' : '<br>Use o <b>Google Chrome</b> para conseguir instalar.')+
+    '</div>'+
+    '<div class="notice-actions">'+
+      (deferredInstallPrompt
+        ? '<button class="notice-btn primary" onclick="triggerInstall()">Instalar app</button>'
+        : '<button class="notice-btn primary" onclick="showInstallHelp()">Como instalar</button>')+
+      '<button class="notice-btn" onclick="dismissInstallNotice()">Dispensar</button>'+
+    '</div>';
+}
+
 /* ============ INIT ============ */
 async function init(){
   await loadData();
   document.getElementById('dateSub').textContent = new Date().toLocaleDateString('pt-BR', {day:'2-digit',month:'long',year:'numeric'});
   renderMonth();
+  renderNotice();
+  requestPersistentStorage();
 }
 init();
 
