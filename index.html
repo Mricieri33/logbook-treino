@@ -154,6 +154,96 @@
     border-left:2px solid var(--steel);
     border-radius:0 4px 4px 0;
   }
+  .month-status{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:10px;
+    flex-wrap:wrap;
+    margin:0 0 16px 0;
+  }
+  .finish-btn{
+    background:var(--panel-alt);
+    border:1px solid var(--steel);
+    color:var(--text);
+    padding:8px 16px;
+    border-radius:4px;
+    font-size:12px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .finish-btn:hover{border-color:var(--accent);}
+  .finished-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    background:#14261B;
+    border:1px solid var(--ok);
+    color:var(--ok);
+    padding:7px 13px;
+    border-radius:4px;
+    font-size:12px;
+    font-weight:700;
+  }
+  .finished-badge .reopen{
+    color:var(--muted);
+    font-weight:400;
+    cursor:pointer;
+    text-decoration:underline;
+    font-size:11px;
+  }
+  .month-summary{
+    background:var(--panel);
+    border:1px solid var(--border);
+    border-radius:6px;
+    padding:14px 16px;
+    margin-bottom:16px;
+  }
+  .month-summary h4{
+    font-family:"Arial Black",Arial,sans-serif;
+    font-size:12px;
+    letter-spacing:1px;
+    text-transform:uppercase;
+    color:var(--muted);
+    margin:0 0 10px 0;
+  }
+  .month-summary h4 span{color:var(--accent);}
+  .summary-line{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    padding:6px 0;
+    border-bottom:1px solid var(--border);
+    font-size:12px;
+  }
+  .summary-line:last-child{border-bottom:none;}
+  .summary-line .ex{flex:1;}
+  .summary-metrics{
+    display:flex;
+    gap:16px;
+    flex-wrap:wrap;
+    margin-bottom:10px;
+  }
+  .metric-box{
+    flex:1;
+    min-width:90px;
+    background:var(--panel-alt);
+    border-radius:5px;
+    padding:10px;
+    text-align:center;
+  }
+  .metric-box .num{
+    font-family:"Arial Black",Arial,sans-serif;
+    font-size:20px;
+    color:var(--text);
+  }
+  .metric-box .lbl{
+    font-size:9px;
+    color:var(--muted);
+    text-transform:uppercase;
+    letter-spacing:0.5px;
+    margin-top:2px;
+  }
   table{
     width:100%;
     border-collapse:collapse;
@@ -176,6 +266,25 @@
     font-weight:700;
   }
   th.current-week{color:var(--accent);}
+  th.week-head{cursor:pointer;user-select:none;}
+  th.week-head:hover{background:var(--panel);}
+  th.week-active{
+    color:var(--accent);
+    background:var(--panel);
+    box-shadow:inset 0 -3px 0 var(--accent);
+  }
+  td.col-active{
+    background:rgba(214,64,44,0.06);
+    box-shadow:inset 3px 0 0 var(--accent-dim), inset -3px 0 0 var(--accent-dim);
+  }
+  .week-tag{
+    display:block;
+    font-size:8px;
+    font-weight:400;
+    color:var(--steel);
+    margin-top:2px;
+  }
+  th.week-active .week-tag{color:var(--accent);}
   td.exname{
     text-align:left;
     min-width:225px;
@@ -690,6 +799,9 @@
       <button onclick="changeMonth(1)">›</button>
     </div>
 
+    <div class="month-status" id="monthStatus"></div>
+    <div id="monthSummaryBox"></div>
+
     <div class="day-tabs" id="dayTabs"></div>
     <div class="day-focus-row">
       <span class="day-focus" id="dayFocus"></span>
@@ -731,7 +843,7 @@
   <div class="modal-box" id="modalBox"></div>
 </div>
 
-<div class="app-version">v2.1</div>
+<div class="app-version">v2.3</div>
 
 <script>
 /* ============ PLANO BASE (dias fixos, slots editáveis) ============ */
@@ -849,6 +961,26 @@ function currentWeekIndexIfThisMonth(year, month){
   }
   return null;
 }
+
+// Semana marcada manualmente pelo usuário, por mês (guardada junto dos dados).
+function getActiveWeek(mk, weeksCount, dateWeek){
+  if(entries.__activeWeek && entries.__activeWeek[mk]){
+    const v = entries.__activeWeek[mk];
+    if(v >= 1 && v <= weeksCount) return v;
+  }
+  return dateWeek; // sem escolha manual: usa a semana do calendário (pode ser null em outros meses)
+}
+
+function setActiveWeek(mk, weekIndex){
+  entries.__activeWeek = entries.__activeWeek || {};
+  if(entries.__activeWeek[mk] === weekIndex){
+    delete entries.__activeWeek[mk]; // clicar de novo na mesma volta pro automático
+  } else {
+    entries.__activeWeek[mk] = weekIndex;
+  }
+  scheduleSave();
+  renderDayContent();
+}
 function monthLabel(d){
   return MONTH_NAMES[d.getMonth()]+'/'+String(d.getFullYear()).slice(2);
 }
@@ -873,6 +1005,7 @@ function changeMonth(delta){
 
 function renderMonth(){
   document.getElementById('monthLabel').textContent = monthLabel(viewDate);
+  renderMonthStatus();
   renderDayTabs();
   if(!activeDayId){
     const today = new Date();
@@ -895,6 +1028,130 @@ function renderDayTabs(){
   });
 }
 
+/* ============ FINALIZAR MÊS ============ */
+// Conta quantas semanas do mês tiveram algum registro (ignora as vazias que sobraram).
+function weeksTrainedInMonth(mk){
+  const monthData = entries[mk];
+  if(!monthData) return 0;
+  const weeksWithData = new Set();
+  Object.keys(monthData).forEach(slotId=>{
+    if(slotId.startsWith('__')) return;
+    const slotWeeks = monthData[slotId];
+    if(!slotWeeks || typeof slotWeeks !== 'object') return;
+    Object.keys(slotWeeks).forEach(wk=>{
+      const e = slotWeeks[wk];
+      if(e && (e.sets || e.reps || e.weight || (e.extra && e.extra.parts && e.extra.parts.length))){
+        weeksWithData.add(wk);
+      }
+    });
+  });
+  return weeksWithData.size;
+}
+
+function isMonthFinished(mk){
+  return !!(entries.__finished && entries.__finished[mk]);
+}
+
+function renderMonthStatus(){
+  const wrap = document.getElementById('monthStatus');
+  const summaryBox = document.getElementById('monthSummaryBox');
+  if(!wrap) return;
+  wrap.innerHTML = '';
+  summaryBox.innerHTML = '';
+
+  const mk = monthKey(viewDate);
+  if(isMonthFinished(mk)){
+    const info = entries.__finished[mk];
+    const badge = document.createElement('div');
+    badge.className = 'finished-badge';
+    badge.innerHTML = 'Mês finalizado ('+info.weeksTrained+' semana'+(info.weeksTrained>1?'s':'')+' treinada'+(info.weeksTrained>1?'s':'')+') '+
+      '<span class="reopen" onclick="reopenMonth()">reabrir</span>';
+    wrap.appendChild(badge);
+    summaryBox.appendChild(buildMonthSummary(mk));
+  } else {
+    const btn = document.createElement('button');
+    btn.className = 'finish-btn';
+    btn.textContent = 'Finalizar este mês';
+    btn.onclick = ()=> confirmFinishMonth(mk);
+    wrap.appendChild(btn);
+  }
+}
+
+function confirmFinishMonth(mk){
+  const trained = weeksTrainedInMonth(mk);
+  if(trained === 0){
+    showModal(
+      '<div class="modal-msg">Nenhum treino registrado neste mês ainda. Registre pelo menos uma semana antes de finalizar.</div>'+
+      '<div class="modal-actions"><button class="btn-confirm" onclick="closeModal()">Entendi</button></div>'
+    );
+    return;
+  }
+  const totalWeeks = weeksInMonth(viewDate.getFullYear(), viewDate.getMonth()).length;
+  showConfirm(
+    'Finalizar <b>'+monthLabel(viewDate)+'</b>?<br><br>'+
+    'Você treinou <b>'+trained+' de '+totalWeeks+' semanas</b>. As semanas em branco que sobraram não entram no cálculo — a evolução mensal passa a usar a média por semana treinada, para comparar meses de forma justa.<br><br>'+
+    'Dá para reabrir depois.',
+    ()=>{
+      entries.__finished = entries.__finished || {};
+      entries.__finished[mk] = { weeksTrained: trained, totalWeeks: totalWeeks, at: new Date().toISOString() };
+      scheduleSave();
+      renderMonth();
+    }
+  );
+}
+
+function reopenMonth(){
+  const mk = monthKey(viewDate);
+  showConfirm(
+    'Reabrir <b>'+monthLabel(viewDate)+'</b>? Você poderá editar os registros de novo e o cálculo volta a considerar todas as semanas do mês.',
+    ()=>{
+      if(entries.__finished) delete entries.__finished[mk];
+      scheduleSave();
+      renderMonth();
+    }
+  );
+}
+
+// Resumo do fechamento: métricas gerais + evolução por exercício.
+function buildMonthSummary(mk){
+  const box = document.createElement('div');
+  box.className = 'month-summary';
+
+  const deltas = monthDeltasFor(mk);       // reaproveita o cálculo já existente
+  const info = entries.__finished[mk];
+
+  let exercisesUp = 0, totalRepsGain = 0, totalKgGain = 0;
+  deltas.forEach(d=>{
+    if(d.single) return;
+    if((d.dReps||0) > 0 || (d.dKg||0) > 0) exercisesUp++;
+    totalRepsGain += (d.dReps||0);
+    totalKgGain += (d.dKg||0);
+  });
+
+  const withData = deltas.filter(d=>!d.single).length;
+
+  let html = '<h4>Fechamento de <span>'+monthLabel(viewDate)+'</span></h4>';
+  html += '<div class="summary-metrics">'+
+    '<div class="metric-box"><div class="num">'+info.weeksTrained+'</div><div class="lbl">semanas treinadas</div></div>'+
+    '<div class="metric-box"><div class="num">'+exercisesUp+'/'+withData+'</div><div class="lbl">exercícios evoluíram</div></div>'+
+    '<div class="metric-box"><div class="num">'+(totalKgGain>=0?'+':'')+ (Math.round(totalKgGain*10)/10) +'</div><div class="lbl">kg somados</div></div>'+
+    '</div>';
+
+  if(deltas.length === 0){
+    html += '<div class="summary-line"><span class="ex">Sem dados suficientes para detalhar por exercício.</span></div>';
+  } else {
+    deltas.forEach(d=>{
+      if(d.single){
+        html += '<div class="summary-line"><span class="ex">'+escapeHtml(d.name)+'</span><span class="delta-zero">só 1 semana</span></div>';
+      } else {
+        html += '<div class="summary-line"><span class="ex">'+escapeHtml(d.name)+'</span><span>'+fmtDelta(d.dReps,'reps')+' · '+fmtDelta(d.dKg,'kg')+'</span></div>';
+      }
+    });
+  }
+  box.innerHTML = html;
+  return box;
+}
+
 /* ============ DAY CONTENT (TABLE) ============ */
 function renderDayContent(){
   const day = plan.days.find(d=>d.id===activeDayId);
@@ -911,13 +1168,14 @@ function renderDayContent(){
   const year = viewDate.getFullYear();
   const month = viewDate.getMonth();
   const weeks = weeksInMonth(year, month);
-  const curWeek = currentWeekIndexIfThisMonth(year, month);
+  const dateWeek = currentWeekIndexIfThisMonth(year, month);
   const mk = monthKey(viewDate);
   entries[mk] = entries[mk] || {};
+  const curWeek = getActiveWeek(mk, weeks.length, dateWeek);
 
   const legend = document.createElement('div');
   legend.className = 'week-legend';
-  legend.textContent = 'Registre a última série (máx. 4): nº da série + reps e kg dela (aceita decimal, ex: 62,5). Toque na meta abaixo do exercício para definir reps/kg de cada série ou marcar peso corporal.';
+  legend.textContent = 'Toque no topo de uma semana (Sem 1, Sem 2...) para marcar em qual você está. Registre a última série: nº da série + reps e kg dela (aceita decimal, ex: 62,5).';
   container.appendChild(legend);
 
   const table = document.createElement('table');
@@ -926,8 +1184,15 @@ function renderDayContent(){
   headRow.innerHTML = '<th style="text-align:left;">Exercício<span class="th-hint">(organize com os exercícios do seu treino)</span></th>';
   weeks.forEach(w=>{
     const th = document.createElement('th');
-    th.className = (curWeek===w.index) ? 'current-week' : '';
-    th.innerHTML = 'Sem '+w.index+'<br><span style="font-weight:400;">'+w.startDay+'-'+w.endDay+'</span>';
+    const isActive = (curWeek===w.index);
+    const isToday = (dateWeek===w.index);
+    th.className = 'week-head' + (isActive ? ' week-active' : '');
+    let tag = '';
+    if(isActive) tag = '<span class="week-tag">você está aqui</span>';
+    else if(isToday) tag = '<span class="week-tag">semana atual</span>';
+    th.innerHTML = 'Sem '+w.index+'<br><span style="font-weight:400;">'+w.startDay+'-'+w.endDay+'</span>'+tag;
+    th.title = 'Marcar que você está na semana '+w.index;
+    th.onclick = ()=> setActiveWeek(mk, w.index);
     headRow.appendChild(th);
   });
   thead.appendChild(headRow);
@@ -967,6 +1232,7 @@ function renderDayContent(){
 
     weeks.forEach(w=>{
       const td = document.createElement('td');
+      if(curWeek===w.index) td.className = 'col-active';
       const key = String(w.index);
       const e = slotEntries[key] || {};
 
@@ -1237,6 +1503,7 @@ function parseTopRep(repsStr){
 function maxWeightForSlot(slotId){
   let max = 0;
   Object.keys(entries).forEach(mk=>{
+    if(mk.startsWith('__')) return;
     const slotData = entries[mk][slotId];
     if(!slotData) return;
     Object.values(slotData).forEach(e=>{
@@ -1734,14 +2001,20 @@ function renderCharts(){
   }
 
   // MONTHLY (all months with data for this slot, chronological)
-  const monthKeys = Object.keys(entries).filter(k=> entries[k][slotId]).sort();
+  const monthKeys = Object.keys(entries).filter(k=> !k.startsWith('__') && entries[k][slotId]).sort();
   const monthLabels = monthKeys.map(k=>{
     const [y,m] = k.split('-').map(Number);
     return MONTH_NAMES[m-1]+'/'+String(y).slice(2);
   });
   const monthData = monthKeys.map(k=>{
     const slotData = entries[k][slotId];
-    return Object.values(slotData).reduce((sum,e)=> sum + (volumeFor(e, chartIsBW)||0), 0);
+    const total = Object.values(slotData).reduce((sum,e)=> sum + (volumeFor(e, chartIsBW)||0), 0);
+    // Mês finalizado: média por semana treinada, para comparar meses de tamanhos diferentes.
+    if(isMonthFinished(k)){
+      const tw = entries.__finished[k].weeksTrained || 1;
+      return Math.round(total / tw);
+    }
+    return total;
   });
 
   const mCtx = document.getElementById('monthlyChart');
@@ -1773,7 +2046,7 @@ function renderCharts(){
           x:{ticks:{color:'#94949A'}, grid:{display:false}},
           y:{
             ticks:{color:'#94949A'}, grid:{color:'#2C2C30'}, beginAtZero:true,
-            title:{display:true, text: chartIsBW ? 'Volume total (reps no mês)' : 'Volume total (kg levantados no mês)', color:'#94949A', font:{size:11}}
+            title:{display:true, text: chartIsBW ? 'Volume por semana (reps)' : 'Volume por semana (kg)', color:'#94949A', font:{size:11}}
           }
         }
       }
@@ -1843,7 +2116,7 @@ function monthDeltasFor(mk){
 function renderMonthlyDetail(){
   const container = document.getElementById('monthlyDetail');
   container.innerHTML = '';
-  const mks = Object.keys(entries).sort().reverse();
+  const mks = Object.keys(entries).filter(k=> !k.startsWith('__')).sort().reverse();
   let rendered = 0;
   mks.forEach((mk, idx)=>{
     const deltas = monthDeltasFor(mk);
