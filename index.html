@@ -843,7 +843,7 @@
   <div class="modal-box" id="modalBox"></div>
 </div>
 
-<div class="app-version">v2.3</div>
+<div class="app-version">v2.4</div>
 
 <script>
 /* ============ PLANO BASE (dias fixos, slots editáveis) ============ */
@@ -1768,7 +1768,49 @@ function buildSwapControl(day){
 
   wrap.appendChild(sel);
   wrap.appendChild(btn);
+
+  // Clonar exercícios deste dia para outro (só se houver exercícios para copiar).
+  if(!day.off && day.slots.length){
+    const cloneBtn = document.createElement('button');
+    cloneBtn.className = 'btn-add';
+    cloneBtn.textContent = 'Clonar para';
+    cloneBtn.onclick = ()=>{
+      const targetDay = plan.days.find(d=>d.id===sel.value);
+      const destDesc = targetDay.off ? 'Descanso' : targetDay.focus;
+      const destInfo = targetDay.slots.length
+        ? 'A <b>'+targetDay.label+'</b> já tem '+targetDay.slots.length+' exercício(s) — eles serão substituídos pela cópia da '+day.label+'.'
+        : 'A <b>'+targetDay.label+'</b> receberá os exercícios da '+day.label+'.';
+      showConfirm(
+        'Clonar os '+day.slots.length+' exercícios de <b>'+day.label+'</b> para <b>'+targetDay.label+'</b>?<br><br>'+
+        destInfo+'<br><br>'+
+        'Copia só a estrutura (exercícios, séries e metas). Os registros de treino das semanas <b>não</b> vão junto — os campos ficam em branco para preencher.',
+        ()=> cloneDay(day.id, targetDay.id)
+      );
+    };
+    wrap.appendChild(cloneBtn);
+  }
+
   return wrap;
+}
+
+function cloneDay(fromId, toId){
+  const from = plan.days.find(d=>d.id===fromId);
+  const to = plan.days.find(d=>d.id===toId);
+  if(!from || !to) return;
+
+  // Copia cada exercício com um ID novo (para não misturar registros/histórico com a origem).
+  to.slots = from.slots.map(s=>{
+    const nova = JSON.parse(JSON.stringify(s));
+    nova.id = toId+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,7);
+    return nova;
+  });
+  // Destino vira dia de treino com a mesma descrição da origem.
+  to.off = false;
+  to.focus = from.focus;
+
+  scheduleSave();
+  activeDayId = toId;       // leva o usuário para o dia clonado, para conferir
+  renderMonth();
 }
 
 function swapDays(idA, idB){
