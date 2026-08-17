@@ -686,6 +686,24 @@
     min-height:14px;
   }
   /* ANALYSIS TAB */
+  .cmp-controls{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+    margin-bottom:8px;
+  }
+  .cmp-controls select{flex:1;min-width:120px;}
+  .cmp-vs{
+    color:var(--accent);
+    font-weight:900;
+    font-family:"Arial Black",Arial,sans-serif;
+  }
+  .cmp-note{
+    font-size:11px;
+    color:var(--warn);
+    line-height:1.4;
+  }
   .analysis-controls{
     display:flex;
     gap:10px;
@@ -835,6 +853,21 @@
       <h3>Detalhe <span>por Mês</span></h3>
       <div id="monthlyDetail"></div>
     </div>
+
+    <div class="chart-panel">
+      <h3>Comparar <span>Dias</span></h3>
+      <div class="cmp-controls">
+        <select id="cmpDiaA" onchange="renderDayCompare()"></select>
+        <span class="cmp-vs">x</span>
+        <select id="cmpDiaB" onchange="renderDayCompare()"></select>
+      </div>
+      <div class="cmp-note" id="cmpNote"></div>
+      <div style="margin-top:14px;"><b style="font-size:11px;color:var(--muted);letter-spacing:1px;">POR SEMANA — <span id="cmpMonthLabel"></span></b></div>
+      <canvas id="cmpWeeklyChart" style="margin-top:8px;"></canvas>
+      <div style="margin-top:16px;"><b style="font-size:11px;color:var(--muted);letter-spacing:1px;">POR MÊS</b></div>
+      <canvas id="cmpMonthlyChart" style="margin-top:8px;"></canvas>
+      <div class="insight" id="cmpInsight"></div>
+    </div>
   </div>
 
 </div>
@@ -843,7 +876,7 @@
   <div class="modal-box" id="modalBox"></div>
 </div>
 
-<div class="app-version">v2.4</div>
+<div class="app-version">v2.5</div>
 
 <script>
 /* ============ PLANO BASE (dias fixos, slots editáveis) ============ */
@@ -994,6 +1027,7 @@ function switchTab(tab){
   if(tab==='analise'){
     populateAnalysisSelects();
     renderCharts();
+    populateCompareSelects();
   }
 }
 
@@ -1874,6 +1908,135 @@ function populateAnalysisSelects(){
   });
   if(currentDia) selDia.value = currentDia;
   onDiaChange();
+}
+
+function populateCompareSelects(){
+  const selA = document.getElementById('cmpDiaA');
+  const selB = document.getElementById('cmpDiaB');
+  if(!selA || !selB) return;
+  const curA = selA.value, curB = selB.value;
+  selA.innerHTML = '';
+  selB.innerHTML = '';
+  const trainingDays = plan.days.filter(d=>!d.off);
+  trainingDays.forEach(d=>{
+    const label = d.label + ' — ' + d.focus;
+    const oA = document.createElement('option'); oA.value = d.id; oA.textContent = label; selA.appendChild(oA);
+    const oB = document.createElement('option'); oB.value = d.id; oB.textContent = label; selB.appendChild(oB);
+  });
+  // Padrão: primeiro dia em A, segundo dia diferente em B.
+  if(curA){ selA.value = curA; } 
+  if(curB){ selB.value = curB; }
+  else if(trainingDays.length>1){ selB.value = trainingDays[1].id; }
+  renderDayCompare();
+}
+
+// Soma o volume de todos os exercícios de um dia numa dada semana de um mês.
+function dayVolumeForWeek(day, mk, weekIndex){
+  let total = 0, hasData = false;
+  day.slots.forEach(slot=>{
+    const e = entries[mk] && entries[mk][slot.id] ? entries[mk][slot.id][String(weekIndex)] : null;
+    const v = volumeFor(e, !!slot.bodyweight);
+    if(v!=null){ total += v; hasData = true; }
+  });
+  return hasData ? total : null;
+}
+
+// Soma o volume de todos os exercícios de um dia no mês inteiro.
+function dayVolumeForMonth(day, mk){
+  let total = 0, hasData = false;
+  day.slots.forEach(slot=>{
+    const slotData = entries[mk] && entries[mk][slot.id];
+    if(!slotData) return;
+    Object.values(slotData).forEach(e=>{
+      const v = volumeFor(e, !!slot.bodyweight);
+      if(v!=null){ total += v; hasData = true; }
+    });
+  });
+  return hasData ? total : null;
+}
+
+function dayHasBodyweight(day){
+  return day.slots.some(s=>s.bodyweight);
+}
+
+let cmpWeeklyInstance = null;
+let cmpMonthlyInstance = null;
+
+function renderDayCompare(){
+  const selA = document.getElementById('cmpDiaA');
+  const selB = document.getElementById('cmpDiaB');
+  if(!selA || !selB || !selA.value || !selB.value) return;
+  const dayA = plan.days.find(d=>d.id===selA.value);
+  const dayB = plan.days.find(d=>d.id===selB.value);
+  if(!dayA || !dayB) return;
+
+  const mk = monthKey(viewDate);
+  document.getElementById('cmpMonthLabel').textContent = monthLabel(viewDate);
+
+  // Aviso se algum dia mistura peso corporal com carga (unidades diferentes).
+  const noteEl = document.getElementById('cmpNote');
+  const mixed = [];
+  if(dayHasBodyweight(dayA) && dayA.slots.some(s=>!s.bodyweight)) mixed.push(dayA.label);
+  if(dayHasBodyweight(dayB) && dayB.slots.some(s=>!s.bodyweight)) mixed.push(dayB.label);
+  noteEl.textContent = mixed.length
+    ? 'Atenção: '+mixed.join(' e ')+' misturam exercícios de carga (kg) e de peso corporal (reps). O total soma as duas coisas, então use como referência, não valor exato.'
+    : '';
+
+  // WEEKLY
+  const weeks = weeksInMonth(viewDate.getFullYear(), viewDate.getMonth());
+  const weekLabels = weeks.map(w=>'Sem '+w.index);
+  const dataA = weeks.map(w=> dayVolumeForWeek(dayA, mk, w.index));
+  const dataB = weeks.map(w=> dayVolumeForWeek(dayB, mk, w.index));
+
+  const wCtx = document.getElementById('cmpWeeklyChart');
+  if(cmpWeeklyInstance) cmpWeeklyInstance.destroy();
+  cmpWeeklyInstance = new Chart(wCtx, {
+    type:'line',
+    data:{ labels: weekLabels, datasets:[
+      { label: dayA.label, data: dataA, borderColor:'#D6402C', backgroundColor:'rgba(214,64,44,0.12)', fill:false, tension:0.25, spanGaps:false, pointRadius:4, pointBackgroundColor:'#D6402C' },
+      { label: dayB.label, data: dataB, borderColor:'#5B6472', backgroundColor:'rgba(91,100,114,0.12)', fill:false, tension:0.25, spanGaps:false, pointRadius:4, pointBackgroundColor:'#5B6472' }
+    ]},
+    options:{ plugins:{ legend:{ display:true, position:'top', labels:{color:'#EDEDED', font:{size:11}, boxWidth:14, padding:12} } },
+      scales:{ x:{ticks:{color:'#94949A'}, grid:{color:'#2C2C30'}}, y:{ticks:{color:'#94949A'}, grid:{color:'#2C2C30'}, beginAtZero:true, title:{display:true, text:'Volume total do dia', color:'#94949A', font:{size:11}}} } }
+  });
+
+  // MONTHLY (todos os meses com dados de qualquer um dos dois dias)
+  const allMonths = Object.keys(entries).filter(k=>!k.startsWith('__')).sort();
+  const monthsWithData = allMonths.filter(k=> dayVolumeForMonth(dayA,k)!=null || dayVolumeForMonth(dayB,k)!=null );
+  const monthLabels = monthsWithData.map(k=>{ const [y,m]=k.split('-').map(Number); return MONTH_NAMES[m-1]+'/'+String(y).slice(2); });
+  const mDataA = monthsWithData.map(k=> dayVolumeForMonth(dayA,k) || 0);
+  const mDataB = monthsWithData.map(k=> dayVolumeForMonth(dayB,k) || 0);
+
+  const mCtx = document.getElementById('cmpMonthlyChart');
+  if(cmpMonthlyInstance) cmpMonthlyInstance.destroy();
+  const insightEl = document.getElementById('cmpInsight');
+
+  if(monthsWithData.length===0){
+    insightEl.textContent = 'Registre treinos nesses dias para comparar.';
+  } else {
+    cmpMonthlyInstance = new Chart(mCtx, {
+      type:'bar',
+      data:{ labels: monthLabels, datasets:[
+        { label: dayA.label, data: mDataA, backgroundColor:'#D6402C', borderRadius:4 },
+        { label: dayB.label, data: mDataB, backgroundColor:'#5B6472', borderRadius:4 }
+      ]},
+      options:{ plugins:{ legend:{ display:true, position:'top', labels:{color:'#EDEDED', font:{size:11}, boxWidth:14, padding:12} } },
+        scales:{ x:{ticks:{color:'#94949A'}, grid:{display:false}}, y:{ticks:{color:'#94949A'}, grid:{color:'#2C2C30'}, beginAtZero:true, title:{display:true, text:'Volume total do dia (mês)', color:'#94949A', font:{size:11}}} } }
+    });
+    // Insight do mês atual em foco
+    const curA = dayVolumeForMonth(dayA, mk);
+    const curB = dayVolumeForMonth(dayB, mk);
+    if(curA!=null && curB!=null){
+      const diff = Math.abs(curA-curB);
+      const pct = Math.min(curA,curB)>0 ? Math.round((diff/Math.min(curA,curB))*100) : 0;
+      const maior = curA>curB ? dayA.label : dayB.label;
+      insightEl.textContent = curA===curB
+        ? 'Em '+monthLabel(viewDate)+', os dois dias tiveram o mesmo volume total.'
+        : 'Em '+monthLabel(viewDate)+', '+maior+' teve '+pct+'% mais volume total.';
+    } else {
+      insightEl.textContent = 'Um dos dias ainda não tem registro em '+monthLabel(viewDate)+'.';
+    }
+  }
 }
 
 function onDiaChange(){
